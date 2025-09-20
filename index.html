@@ -175,7 +175,7 @@ footer{padding:16px 20px;border-top:1px solid #eee;color:#555}
   </footer>
 
   <script>
-/* Music Bingo v8.2 — winners highlight + list, preview toggle, progress bar, rules, auto-marking */
+/* Music Bingo v8.3 — file-first import + robust CSV parser + winners highlight, etc. */
 const els = {
   csvFile: document.getElementById('csvFile'),
   loadSample: document.getElementById('loadSample'),
@@ -210,13 +210,11 @@ const els = {
   checkCardId: document.getElementById('checkCardId'),
   checkCardBtn: document.getElementById('checkCardBtn'),
   checkResult: document.getElementById('checkResult'),
-  // settings
   logoUpload: document.getElementById('logoUpload'),
   logoUrl: document.getElementById('logoUrl'),
   logoImg: document.getElementById('logoImg'),
   accentColor: document.getElementById('accentColor'),
   clickablePreview: document.getElementById('clickablePreview'),
-  // winners
   winnersPanel: document.getElementById('winnersPanel'),
   winnersList: document.getElementById('winnersList'),
 };
@@ -248,33 +246,75 @@ if (els.clickablePreview){
 }
 
 function csvToRows(csv){
-  return csv.split(/\r?\n/).map(r=>r.trim()).filter(Boolean).map(r=>r.split(',').map(c=>c.trim()));
+  // Detect delimiter from first non-empty line
+  const firstLine = (csv.split(/\r?\n/).find(l=>l.trim().length>0) || '');
+  const delimiter = (firstLine.includes(';') && !firstLine.includes(',')) ? ';' : ',';
+
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i=0; i<csv.length; i++){
+    const ch = csv[i];
+    const next = csv[i+1];
+
+    if (inQuotes){
+      if (ch === '"' && next === '"'){ cell += '"'; i++; }
+      else if (ch === '"'){ inQuotes = false; }
+      else { cell += ch; }
+    } else {
+      if (ch === '"'){ inQuotes = true; }
+      else if (ch === delimiter){ row.push(cell); cell=''; }
+      else if (ch === '\n'){
+        row.push(cell); cell='';
+        // push non-empty row
+        if (row.some(v => (v ?? '').toString().trim() !== '')) rows.push(row.map(v => (v ?? '').toString()));
+        row=[];
+      } else if (ch === '\r'){ /* ignore */ }
+      else { cell += ch; }
+    }
+  }
+  // last cell/row
+  if (cell.length || row.length){
+    row.push(cell);
+    if (row.some(v => (v ?? '').toString().trim() !== '')) rows.push(row.map(v => (v ?? '').toString()));
+  }
+
+  // Trim cells
+  for (let r=0; r<rows.length; r++){
+    rows[r] = rows[r].map(c => c.trim());
+  }
+  return rows;
 }
 function toCsv(rows){
   return rows.map(r=>r.map(x=>{
     const s = String(x ?? '');
-    return (s.includes(',') || s.includes('"')) ? '"' + s.replace(/"/g,'""') + '"' : s;
+    return (s.includes(',') || s.includes(';') || s.includes('"')) ? '"' + s.replace(/"/g,'""') + '"' : s;
   }).join(',')).join('\n');
 }
+
 function parseSongs(csv){
   const rows = csvToRows(csv);
   if (!rows.length) return [];
   const header = rows[0].map(h=>h.toLowerCase());
-  const idxTitle = header.indexOf('title');
-  const idxArtist = header.indexOf('artist');
+  const idxTitle = Math.max(header.indexOf('title'), 0);
+  const idxArtist = header.indexOf('artist') >= 0 ? header.indexOf('artist') : 1;
   const idxPrev = header.indexOf('preview_url');
+
   const out = [];
   for (let i=1;i<rows.length;i++){
     const r = rows[i];
-    const title = idxTitle>=0 ? r[idxTitle] : r[0];
-    const artist = idxArtist>=0 ? r[idxArtist] : '';
-    let preview_url = idxPrev>=0 ? r[idxPrev] : '';
+    const title = (r[idxTitle] || '').trim();
+    const artist = (r[idxArtist] || '').trim();
+    let preview_url = (idxPrev>=0 ? r[idxPrev] : '') || '';
     if (!title) continue;
     if (preview_url) preview_url = sanitizeUrl(preview_url);
     out.push({title, artist, preview_url, key: `${title} — ${artist}`.trim()});
   }
   return out;
 }
+
 function exportSanitizedCsv(){
   if (!SONGS.length) return;
   const rows = [['title','artist','preview_url']];
@@ -312,14 +352,25 @@ Uptown Funk,Mark Ronson ft. Bruno Mars,https://www.youtube.com/watch?v=OPf0YbXqD
 Bohemian Rhapsody,Queen,https://www.youtube.com/watch?v=fJ9rUzIMcZQ`;
   els.csvText.value = sample;
 });
+
 els.parseCsv.addEventListener('click', async ()=>{
-  let txt = els.csvText.value.trim();
-  if (!txt && els.csvFile.files[0]) txt = await readFileAsText(els.csvFile.files[0]);
-  if (!txt){ alert('Geef een CSV of plak tekst.'); return; }
+  let txt = '';
+  // 1) Bestand heeft voorrang
+  if (els.csvFile.files && els.csvFile.files[0]) {
+    txt = await readFileAsText(els.csvFile.files[0]);
+  } else {
+    // 2) Anders textarea
+    txt = (els.csvText.value || '').trim();
+  }
+  if (!txt) { alert('Geef een CSV (upload of plak tekst).'); return; }
+
   SONGS = parseSongs(txt);
-  if (!SONGS.length){ alert('Geen songs gevonden. Zorg voor minstens een "title" kolom.'); return; }
-  updateSongCount(); localStorage.setItem('MB_SONGS', JSON.stringify(SONGS));
+  if (!SONGS.length) { alert('Geen songs gevonden. Zorg zeker voor header: title,artist,preview_url'); return; }
+
+  updateSongCount();
+  localStorage.setItem('MB_SONGS', JSON.stringify(SONGS));
 });
+
 els.downloadCsv.addEventListener('click', exportSanitizedCsv);
 
 function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
