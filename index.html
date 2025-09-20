@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BBC Sportkaffee - super music bingo</title>
+  <style>
+*{box-sizing:border-box}
+:root{--accent:#f1c40f}
+html,body{margin:0;padding:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial;font-size:16px;color:#111}
+header{padding:16px 20px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:12px}
+h1{margin:0} .tagline{margin:4px 0 0;color:#555}
+header img.logo{height:48px;width:auto;border-radius:8px;object-fit:contain}
+main{padding:16px 20px;max-width:1200px;margin:0 auto}
+.panel{border:1px solid #eee;border-radius:10px;padding:16px;margin:16px 0;background:#fff}
+h2{margin-top:0}
+.import-row{display:flex;gap:12px;align-items:center;margin-bottom:8px}
+textarea{width:100%;font-family:ui-monospace,Consolas,Menlo,monospace}
+.import-actions{display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.grid{display:grid;gap:12px}
+.grid-2{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+label{display:flex;flex-direction:column;gap:6px}
+button{border:1px solid #ddd;padding:10px 14px;border-radius:8px;background:#fafafa;cursor:pointer}
+button:disabled{opacity:.6;cursor:not-allowed}
+#songCount,#cardStatus{color:#444}
+.hint{color:#555;margin-top:6px}
+.now-playing{margin:8px 0;padding:12px;border:1px dashed #ddd;border-radius:8px;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.now-title{font-weight:600}
+.now-actions{display:flex;gap:8px;align-items:center}
+.badge{display:inline-block;padding:2px 6px;border-radius:6px;background:#f5f5f5;color:#555;font-size:12px}
+.draws-wrap{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+ol{margin:0;padding-left:20px}
+footer{padding:16px 20px;border-top:1px solid #eee;color:#555}
+.counter{margin-top:8px;padding:8px 12px;border-radius:8px;border:1px solid #eee;display:inline-block}
+.counter.good{background:#e8f5e9}
+.counter.warn{background:#fff8e1}
+.counter.bad{background:#ffebee}
+.progress-wrap{width:100%;height:10px;background:#eee;border-radius:999px;overflow:hidden;margin-top:8px}
+.progress-bar{height:100%;width:0%;background:var(--accent);transition:width .2s ease}
+.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px}
+.color-chip{display:inline-flex;align-items:center;gap:8px}
+.color-chip .chip{display:inline-block;width:18px;height:18px;border:1px solid #ccc;border-radius:4px;background:var(--accent)}
+.tile.marked{background:rgba(0,0,0,.06); outline:3px solid var(--accent)}
+.setting-row{display:flex;align-items:center;gap:8px}
+
+/* Winners highlight */
+.card.winner{box-shadow:0 0 0 4px var(--accent),0 8px 30px rgba(0,0,0,.2);position:relative}
+.card.winner::after{content:"WINNER";position:absolute;top:8px;right:-6px;background:var(--accent);color:#000;font-weight:800;padding:4px 8px;border-radius:6px;transform:rotate(10deg);border:2px solid #000}
+.winners-panel{margin-top:12px;padding:10px;border:1px solid #eee;border-radius:8px;background:#fafafa}
+.winners-list{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 0;padding:0;list-style:none}
+.winners-list li{padding:4px 8px;border-radius:6px;background:#e8f5e9;border:1px solid #c8e6c9;font-weight:600}
+
+@media print{
+  header,footer,#songs-panel,#host-panel,.import-actions,#cards-panel h2,.grid,.panel>p,.panel>details{display:none !important}
+  body{background:#fff}
+  .card-sheet{page-break-after:always}
+}
+.card-sheet{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:20px 0;break-inside:avoid}
+.card{border:2px solid #000;border-radius:10px;overflow:hidden}
+.card .card-header{padding:10px 12px;border-bottom:2px solid #000;text-align:center;font-weight:700;letter-spacing:1px}
+.card .meta{display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px dashed #000;font-size:12px}
+.board{display:grid}
+.board.size-5{grid-template-columns:repeat(5,1fr)}
+.board.size-4{grid-template-columns:repeat(4,1fr)}
+.tile{border:1px solid #000;min-height:60px;padding:6px;display:flex;align-items:center;justify-content:center;text-align:center}
+.free{font-weight:700}
+.small{font-size:12px;line-height:1.2}
+  </style>
+</head>
+<body>
+  <header>
+    <img class="logo" id="logoImg" alt="Logo" style="display:none"/>
+    <div>
+      <h1>BBC Sportkaffee - super music bingo</h1>
+      <p class="tagline">Host & print cards from your browser — no account nodig.</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" id="songs-panel">
+      <h2>1) Liedjes</h2>
+      <p>Importeer je songs (CSV of plak). Kolommen: <code>title, artist, preview_url (optioneel)</code>.</p>
+      <div class="import-row">
+        <input id="csvFile" type="file" accept=".csv"/>
+        <button id="loadSample">Laad voorbeeld</button>
+      </div>
+      <textarea id="csvText" rows="6" placeholder="Of plak hier CSV..."></textarea>
+      <div class="import-actions">
+        <button id="parseCsv">Songs inladen (en YouTube-URL's aanpassen)</button>
+        <button id="downloadCsv" disabled>Download aangepaste CSV</button>
+        <span id="songCount">0 songs geladen</span>
+      </div>
+      <div id="liveCounter" class="counter"><strong>0</strong> / <span id="reqCount">75</span> nodig</div>
+      <div class="progress-wrap"><div id="progressBar" class="progress-bar" style="width:0%"></div></div>
+      <p id="minInfo" class="hint"></p>
+    </section>
+
+    <section class="panel" id="cards-panel">
+      <h2>2) Kaarten</h2>
+      <div class="grid grid-2">
+        <label>Rastergrootte
+          <select id="boardSize">
+            <option value="5" selected>5×5 (min. 75 songs)</option>
+            <option value="4">4×4 (min. 50 songs)</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="freeCenter" checked/> GRATIS middenvak</label>
+        <label>Aantal unieke kaarten
+          <input id="cardCount" type="number" min="1" max="200" value="12"/>
+        </label>
+        <label>Titel op kaart
+          <input id="cardTitle" type="text" value="BBC Sportkaffee - super music bingo"/>
+        </label>
+        <label>Win-conditie
+          <select id="winRule">
+            <option value="line" selected>Lijn (rij/kolom/diagonaal)</option>
+            <option value="corners">Vier hoeken</option>
+            <option value="cross">Kruis (X)</option>
+            <option value="full">Volle kaart</option>
+          </select>
+        </label>
+      </div>
+      <div class="import-actions">
+        <button id="generateCards">Genereer kaarten</button>
+        <button id="printCards" disabled>Print / PDF</button>
+        <span id="cardStatus"></span>
+      </div>
+      <div id="printArea"></div>
+    </section>
+
+    <section class="panel" id="host-panel">
+      <h2>3) Host (“Caller”)</h2>
+      <div class="grid grid-2">
+        <button id="startGame">Start / Reset trekking</button>
+        <button id="drawNext" disabled>Trek volgend liedje</button>
+      </div>
+      <div id="nowPlaying" class="now-playing">
+        <span class="now-title" id="nowTitle"><em>Ready. Klik “Trek volgend liedje”.</em></span>
+        <span class="now-actions">
+          <a id="previewLink" class="badge" href="#" target="_blank" rel="noopener" style="display:none">Open preview</a>
+          <span id="noPreviewBadge" class="badge" style="display:none">Geen preview-URL in CSV</span>
+        </span>
+      </div>
+      <div class="draws-wrap">
+        <div>
+          <h3>Getrokken (<span id="drawnCount">0</span>)</h3>
+          <ol id="drawnList"></ol>
+        </div>
+        <div>
+          <h3>Resterend (<span id="remainingCount">0</span>)</h3>
+          <ol id="remainingList"></ol>
+        </div>
+      </div>
+      <details open>
+        <summary>Controleer een bingo</summary>
+        <div class="check-wrap">
+          <label>Kaart-ID
+            <input id="checkCardId" type="text" placeholder="bv. C-0007"/>
+          </label>
+          <button id="checkCardBtn">Check</button>
+        </div>
+        <p><em>Huidige win-conditie:</em> <span id="ruleLabel">Lijn (rij/kolom/diagonaal)</span></p>
+        <pre id="checkResult"></pre>
+      </details>
+
+      <div class="winners-panel" id="winnersPanel" style="display:none">
+        <strong>Winnaars</strong>
+        <ul class="winners-list" id="winnersList"></ul>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Runs locally in your browser. ©</p>
+  </footer>
+
+  <script>
+/* Music Bingo v8.2 — winners highlight + list, preview toggle, progress bar, rules, auto-marking */
+const els = {
+  csvFile: document.getElementById('csvFile'),
+  loadSample: document.getElementById('loadSample'),
+  csvText: document.getElementById('csvText'),
+  parseCsv: document.getElementById('parseCsv'),
+  downloadCsv: document.getElementById('downloadCsv'),
+  songCount: document.getElementById('songCount'),
+  minInfo: document.getElementById('minInfo'),
+  liveCounter: document.getElementById('liveCounter'),
+  reqCount: document.getElementById('reqCount'),
+  progressBar: document.getElementById('progressBar'),
+  boardSize: document.getElementById('boardSize'),
+  freeCenter: document.getElementById('freeCenter'),
+  cardCount: document.getElementById('cardCount'),
+  cardTitle: document.getElementById('cardTitle'),
+  winRule: document.getElementById('winRule'),
+  generateCards: document.getElementById('generateCards'),
+  printCards: document.getElementById('printCards'),
+  cardStatus: document.getElementById('cardStatus'),
+  printArea: document.getElementById('printArea'),
+  startGame: document.getElementById('startGame'),
+  drawNext: document.getElementById('drawNext'),
+  nowPlaying: document.getElementById('nowPlaying'),
+  nowTitle: document.getElementById('nowTitle'),
+  previewLink: document.getElementById('previewLink'),
+  noPreviewBadge: document.getElementById('noPreviewBadge'),
+  drawnCount: document.getElementById('drawnCount'),
+  remainingCount: document.getElementById('remainingCount'),
+  drawnList: document.getElementById('drawnList'),
+  remainingList: document.getElementById('remainingList'),
+  ruleLabel: document.getElementById('ruleLabel'),
+  checkCardId: document.getElementById('checkCardId'),
+  checkCardBtn: document.getElementById('checkCardBtn'),
+  checkResult: document.getElementById('checkResult'),
+  // settings
+  logoUpload: document.getElementById('logoUpload'),
+  logoUrl: document.getElementById('logoUrl'),
+  logoImg: document.getElementById('logoImg'),
+  accentColor: document.getElementById('accentColor'),
+  clickablePreview: document.getElementById('clickablePreview'),
+  // winners
+  winnersPanel: document.getElementById('winnersPanel'),
+  winnersList: document.getElementById('winnersList'),
+};
+
+let SONGS = []; // {title, artist, preview_url?, key}
+let DRAW_ORDER = [];
+let DRAWN_KEYS = new Set();
+let CARDS = []; // [{id, size, cells: [songKey|null], freeCenter}]
+
+function setAccent(color){ document.documentElement.style.setProperty('--accent', color); localStorage.setItem('MB_ACCENT', color); }
+function setLogo(src){
+  if (src){ els.logoImg.src = src; els.logoImg.style.display = 'block'; localStorage.setItem('MB_LOGO_SRC', src); }
+  else { els.logoImg.removeAttribute('src'); els.logoImg.style.display = 'none'; localStorage.removeItem('MB_LOGO_SRC'); }
+}
+function sanitizeUrl(u){ return u ? u.replace(/youtube/gi,'yout-ube') : u; }
+function playbackUrl(u){ if (!u || !els.clickablePreview?.checked) return ''; return u.replace(/yout-ube/gi,'youtube'); }
+
+els.accentColor?.addEventListener('input', e=> setAccent(e.target.value));
+els.logoUrl?.addEventListener('change', e=> setLogo(e.target.value.trim()));
+els.logoUpload?.addEventListener('change', e=>{
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader(); reader.onload = ()=> setLogo(reader.result); reader.readAsDataURL(file);
+});
+if (els.clickablePreview){
+  els.clickablePreview.addEventListener('change', ()=>{
+    localStorage.setItem('MB_CLICKABLE', els.clickablePreview.checked ? '1' : '0');
+    rerenderNowPlaying();
+  });
+}
+
+function csvToRows(csv){
+  return csv.split(/\r?\n/).map(r=>r.trim()).filter(Boolean).map(r=>r.split(',').map(c=>c.trim()));
+}
+function toCsv(rows){
+  return rows.map(r=>r.map(x=>{
+    const s = String(x ?? '');
+    return (s.includes(',') || s.includes('"')) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\n');
+}
+function parseSongs(csv){
+  const rows = csvToRows(csv);
+  if (!rows.length) return [];
+  const header = rows[0].map(h=>h.toLowerCase());
+  const idxTitle = header.indexOf('title');
+  const idxArtist = header.indexOf('artist');
+  const idxPrev = header.indexOf('preview_url');
+  const out = [];
+  for (let i=1;i<rows.length;i++){
+    const r = rows[i];
+    const title = idxTitle>=0 ? r[idxTitle] : r[0];
+    const artist = idxArtist>=0 ? r[idxArtist] : '';
+    let preview_url = idxPrev>=0 ? r[idxPrev] : '';
+    if (!title) continue;
+    if (preview_url) preview_url = sanitizeUrl(preview_url);
+    out.push({title, artist, preview_url, key: `${title} — ${artist}`.trim()});
+  }
+  return out;
+}
+function exportSanitizedCsv(){
+  if (!SONGS.length) return;
+  const rows = [['title','artist','preview_url']];
+  SONGS.forEach(s=> rows.push([s.title, s.artist, s.preview_url || '']));
+  const csv = toCsv(rows);
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download='songs_sanitized.csv'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+function requiredByBoard(){ return (parseInt(els.boardSize.value,10)===5) ? 75 : 50; }
+function updateLiveCounter(){
+  const have = SONGS.length, need = requiredByBoard();
+  els.reqCount.textContent = String(need);
+  els.liveCounter.querySelector('strong').textContent = String(have);
+  els.liveCounter.classList.remove('good','warn','bad');
+  const pct = Math.max(0, Math.min(100, Math.round((have/need)*100)));
+  els.progressBar.style.width = pct+'%';
+  if (have>=need) els.liveCounter.classList.add('good');
+  else if (have>=Math.ceil(need*0.6)) els.liveCounter.classList.add('warn');
+  else els.liveCounter.classList.add('bad');
+}
+function updateSongCount(){ els.songCount.textContent = `${SONGS.length} songs geladen`; els.downloadCsv.disabled = SONGS.length===0; updateMinInfo(); updateLiveCounter(); }
+function updateMinInfo(){ const s = parseInt(els.boardSize.value,10); els.minInfo.textContent = `Minimum voor ${s}×${s}: ${requiredByBoard()} songs (klassieke bingo).`; }
+
+async function readFileAsText(file){ return await new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsText(file); }); }
+
+els.loadSample.addEventListener('click', ()=>{
+  const sample = `title,artist,preview_url
+Dancing Queen,ABBA,https://www.youtube.com/watch?v=xFrGuyw1V8s
+Livin' on a Prayer,Bon Jovi,https://www.youtube.com/watch?v=lDK9QqIzhwk
+Shape of You,Ed Sheeran,https://www.youtube.com/watch?v=JGwWNGJdvx8
+Uptown Funk,Mark Ronson ft. Bruno Mars,https://www.youtube.com/watch?v=OPf0YbXqDm0
+Bohemian Rhapsody,Queen,https://www.youtube.com/watch?v=fJ9rUzIMcZQ`;
+  els.csvText.value = sample;
+});
+els.parseCsv.addEventListener('click', async ()=>{
+  let txt = els.csvText.value.trim();
+  if (!txt && els.csvFile.files[0]) txt = await readFileAsText(els.csvFile.files[0]);
+  if (!txt){ alert('Geef een CSV of plak tekst.'); return; }
+  SONGS = parseSongs(txt);
+  if (!SONGS.length){ alert('Geen songs gevonden. Zorg voor minstens een "title" kolom.'); return; }
+  updateSongCount(); localStorage.setItem('MB_SONGS', JSON.stringify(SONGS));
+});
+els.downloadCsv.addEventListener('click', exportSanitizedCsv);
+
+function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function chunk(arr,n){ const out=[]; for(let i=0;i<arr.length;i+=n) out.push(arr.slice(i,i+n)); return out; }
+
+function generateCards(){
+  const size = parseInt(els.boardSize.value,10);
+  const need = parseInt(els.cardCount.value,10);
+  const freeCenter = els.freeCenter.checked && size===5;
+  const minSongs = (size===5)?75:50;
+  if (SONGS.length < minSongs){ alert(`Voor een ${size}×${size} bingo heb je minstens ${minSongs} unieke songs nodig (klassieke regel). Je hebt nu ${SONGS.length}.`); return; }
+  const cellsPerCard = size*size - (freeCenter?1:0);
+  if (SONGS.length < cellsPerCard){ alert(`Je hebt minstens ${cellsPerCard} songs nodig voor een ${size}×${size} bord.`); return; }
+
+  CARDS = [];
+  const usedSets = new Set();
+  for (let n=0;n<need;n++){
+    const picks = shuffle(SONGS).slice(0, cellsPerCard).map(s=>s.key);
+    const fingerprint = picks.slice().sort().join('|');
+    if (usedSets.has(fingerprint)){ n--; continue; }
+    usedSets.add(fingerprint);
+    const id = `C-${String(n+1).padStart(4,'0')}`;
+    CARDS.push({id, size, cells: picks, freeCenter});
+  }
+  renderCards();
+  els.cardStatus.textContent = `Gegenereerd: ${CARDS.length} unieke kaarten.`;
+  els.printCards.disabled = CARDS.length===0;
+  localStorage.setItem('MB_CARDS', JSON.stringify(CARDS));
+  localStorage.setItem('MB_CARD_TITLE', els.cardTitle.value);
+  localStorage.setItem('MB_BOARD_SIZE', size);
+  markCards(); highlightWinners();
+}
+
+function renderCards(){
+  const title = els.cardTitle.value || 'MUSIC BINGO';
+  const container = els.printArea; container.innerHTML='';
+  const sheets = chunk(CARDS, 2);
+  sheets.forEach(cards=>{
+    const sheet = document.createElement('div'); sheet.className='card-sheet';
+    cards.forEach(card=>{
+      const el = document.createElement('div'); el.className='card'; el.dataset.cardId = card.id;
+      el.innerHTML = `
+        <div class="card-header">${escapeHtml(title)}</div>
+        <div class="meta"><span>ID: ${card.id}</span><span>Grid: ${card.size}×${card.size}</span></div>
+        <div class="board size-${card.size}"></div>`;
+      const board = el.querySelector('.board');
+      const size = card.size, freeCenter = card.freeCenter;
+      const cells = card.cells.slice(); let cellIdx=0;
+      for (let r=0;r<size;r++){
+        for (let c=0;c<size;c++){
+          const mid=Math.floor(size/2), isCenter = freeCenter && r===mid && c===mid;
+          const cell = document.createElement('div'); cell.className='tile';
+          if (isCenter){ cell.innerHTML='<div class="free">FREE</div>'; cell.dataset.key='__FREE__'; }
+          else {
+            const key = cells[cellIdx++]; const song = SONGS.find(s=>s.key===key);
+            const text = song ? (song.title + (song.artist ? ' — ' + song.artist : '')) : key;
+            cell.innerHTML = `<div class="small">${escapeHtml(text)}</div>`; cell.dataset.key = key;
+          }
+          board.appendChild(cell);
+        }
+      }
+      sheet.appendChild(el);
+    });
+    container.appendChild(sheet);
+  });
+  updateRuleLabel(); highlightWinners();
+}
+
+function updateRuleLabel(){
+  const map = { line:'Lijn (rij/kolom/diagonaal)', corners:'Vier hoeken', cross:'Kruis (X)', full:'Volle kaart' };
+  els.ruleLabel.textContent = map[els.winRule.value] || 'Lijn (rij/kolom/diagonaal)';
+}
+function escapeHtml(str){ return String(str).replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
+
+function markCards(){
+  document.querySelectorAll('.tile').forEach(t=>{
+    const key = t.dataset.key;
+    const mark = (key==='__FREE__') || (key && DRAWN_KEYS.has(key));
+    t.classList.toggle('marked', !!mark);
+  });
+}
+
+function getWinners(){
+  const winners=[];
+  for (const card of CARDS){ if (evaluateCard(card, DRAWN_KEYS)) winners.push(card.id); }
+  return winners;
+}
+function highlightWinners(){
+  document.querySelectorAll('.card[data-card-id]').forEach(el=> el.classList.remove('winner'));
+  const winners = getWinners();
+  winners.forEach(id=>{
+    const el = document.querySelector(`.card[data-card-id="${id}"]`);
+    if (el) el.classList.add('winner');
+  });
+  if (winners.length){
+    els.winnersList.innerHTML=''; winners.forEach(id=>{ const li=document.createElement('li'); li.textContent=id; els.winnersList.appendChild(li); });
+    els.winnersPanel.style.display='block';
+  } else { els.winnersPanel.style.display='none'; els.winnersList.innerHTML=''; }
+}
+
+els.printCards.addEventListener('click', ()=>{ if (!CARDS.length) return; window.print(); });
+els.generateCards.addEventListener('click', generateCards);
+els.winRule.addEventListener('change', ()=>{ updateRuleLabel(); highlightWinners(); });
+els.boardSize.addEventListener('change', ()=>{ updateMinInfo(); updateLiveCounter(); });
+
+els.startGame.addEventListener('click', ()=>{
+  if (!SONGS.length){ alert('Laad eerst songs.'); return; }
+  const size = parseInt(els.boardSize.value,10);
+  const minSongs = (size===5)?75:50;
+  if (SONGS.length < minSongs){ alert(`Voor een ${size}×${size} bingo heb je minstens ${minSongs} unieke songs nodig (klassieke regel). Je hebt nu ${SONGS.length}.`); return; }
+  DRAW_ORDER = shuffle(SONGS.map(s=>s.key));
+  DRAWN_KEYS = new Set();
+  els.drawNext.disabled = false; els.drawNext.focus();
+  renderHost(); els.nowTitle.innerHTML = '<em>Ready. Klik “Trek volgend liedje”.</em>';
+  saveState(); markCards(); highlightWinners();
+});
+els.drawNext.addEventListener('click', ()=>{
+  if (!DRAW_ORDER.length){ els.drawNext.disabled = true; return; }
+  const next = DRAW_ORDER.shift(); DRAWN_KEYS.add(next);
+  renderHost(next); saveState(); markCards(); highlightWinners();
+});
+
+function renderHost(nowKey){
+  const drawn = Array.from(DRAWN_KEYS), remaining = DRAW_ORDER.slice();
+  els.drawnCount.textContent = String(drawn.length);
+  els.remainingCount.textContent = String(remaining.length);
+  els.drawnList.innerHTML=''; els.remainingList.innerHTML='';
+  drawn.forEach(key=>{ const li=document.createElement('li'); const s=SONGS.find(x=>x.key===key); li.textContent=s?`${s.title}${s.artist?' — '+s.artist:''}`:key; els.drawnList.appendChild(li); });
+  remaining.forEach(key=>{ const li=document.createElement('li'); const s=SONGS.find(x=>x.key===key); li.textContent=s?`${s.title}${s.artist?' — '+s.artist:''}`:key; els.remainingList.appendChild(li); });
+  rerenderNowPlaying(nowKey);
+}
+function rerenderNowPlaying(latestKey=null){
+  let key = latestKey; if (!key && DRAWN_KEYS.size) key = Array.from(DRAWN_KEYS).slice(-1)[0];
+  if (!key){ els.nowTitle.innerHTML='<em>Ready. Klik “Trek volgend liedje”.</em>'; els.previewLink.style.display='none'; els.noPreviewBadge.style.display='none'; return; }
+  const s = SONGS.find(x=>x.key===key); const title = s ? `${s.title}${s.artist?' — '+s.artist:''}` : key;
+  els.nowTitle.textContent = title;
+  const href = s && s.preview_url ? playbackUrl(s.preview_url) : '';
+  if (href){ els.previewLink.href = href; els.previewLink.style.display='inline-block'; els.noPreviewBadge.style.display='none'; }
+  else { els.previewLink.style.display='none'; els.noPreviewBadge.style.display='inline-block'; }
+}
+
+function evaluateCard(card, drawnKeysSet){
+  const size = card.size, freeCenter = card.freeCenter;
+  const board = Array(size*size).fill(null); let idx=0;
+  for (let i=0;i<board.length;i++){
+    const r=Math.floor(i/size), c=i%size, mid=Math.floor(size/2);
+    const isCenter = freeCenter && r===mid && c===mid;
+    board[i] = isCenter ? '__FREE__' : card.cells[idx++];
+  }
+  const marked = board.map(k=> k==='__FREE__' ? true : drawnKeysSet.has(k));
+  const rule = els.winRule.value || 'line';
+  function hasAnyLine(){
+    for (let r=0;r<size;r++){ let ok=true; for (let c=0;c<size;c++) ok=ok&&marked[r*size+c]; if (ok) return true; }
+    for (let c=0;c<size;c++){ let ok=true; for (let r=0;r<size;r++) ok=ok&&marked[r*size+c]; if (ok) return true; }
+    let ok1=true, ok2=true; for (let i=0;i<size;i++){ ok1=ok1&&marked[i*size+i]; ok2=ok2&&marked[i*size+(size-1-i)]; }
+    return ok1 || ok2;
+  }
+  function hasCorners(){ const last=size-1; return marked[0] && marked[last] && marked[last*size] && marked[last*size+last]; }
+  function hasCross(){ let ok1=true, ok2=true; for (let i=0;i<size;i++){ ok1=ok1&&marked[i*size+i]; ok2=ok2&&marked[i*size+(size-1-i)]; } return ok1 && ok2; }
+  function isFull(){ return marked.every(Boolean); }
+  switch (rule){
+    case 'corners': return hasCorners();
+    case 'cross': return hasCross();
+    case 'full': return isFull();
+    default: return hasAnyLine();
+  }
+}
+
+function saveState(){
+  localStorage.setItem('MB_DRAW_ORDER', JSON.stringify(DRAW_ORDER));
+  localStorage.setItem('MB_DRAWN', JSON.stringify(Array.from(DRAWN_KEYS)));
+  localStorage.setItem('MB_WIN_RULE', els.winRule.value);
+  localStorage.setItem('MB_BOARD_SIZE', els.boardSize.value);
+  localStorage.setItem('MB_SONGS_COUNT', SONGS.length);
+  if (els.clickablePreview) localStorage.setItem('MB_CLICKABLE', els.clickablePreview.checked ? '1' : '0');
+}
+function loadState(){
+  try{
+    const s = localStorage.getItem('MB_SONGS'); if (s) SONGS = JSON.parse(s);
+    const cards = localStorage.getItem('MB_CARDS'); if (cards) CARDS = JSON.parse(cards);
+    const title = localStorage.getItem('MB_CARD_TITLE'); if (title) els.cardTitle.value = title;
+    const order = localStorage.getItem('MB_DRAW_ORDER'); if (order) DRAW_ORDER = JSON.parse(order);
+    const drawn = localStorage.getItem('MB_DRAWN'); if (drawn) DRAWN_KEYS = new Set(JSON.parse(drawn));
+    const rule = localStorage.getItem('MB_WIN_RULE'); if (rule) els.winRule.value = rule;
+    const bs = localStorage.getItem('MB_BOARD_SIZE'); if (bs) els.boardSize.value = bs;
+    const accent = localStorage.getItem('MB_ACCENT'); if (accent){ els.accentColor.value = accent; setAccent(accent); }
+    const logoSrc = localStorage.getItem('MB_LOGO_SRC'); if (logoSrc) setLogo(logoSrc);
+    const clickable = localStorage.getItem('MB_CLICKABLE'); if (clickable && els.clickablePreview) els.clickablePreview.checked = (clickable==='1');
+    updateSongCount();
+    if (CARDS.length){ renderCards(); els.printCards.disabled=false; markCards(); }
+    if (SONGS.length && (DRAW_ORDER.length || DRAWN_KEYS.size)){ renderHost(); els.drawNext.disabled=false; }
+    updateRuleLabel(); updateMinInfo(); updateLiveCounter(); rerenderNowPlaying(); highlightWinners();
+  }catch(e){ console.warn('Failed to restore state', e); }
+}
+loadState();
+  </script>
+</body>
+</html>
