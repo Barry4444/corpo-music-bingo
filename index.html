@@ -175,7 +175,7 @@ footer{padding:16px 20px;border-top:1px solid #eee;color:#555}
   </footer>
 
   <script>
-/* Music Bingo v8.3 — file-first import + robust CSV parser + winners highlight, etc. */
+/* Music Bingo v8.4 — file-first import + robust CSV + multi-header preview + auto YouTube search + winners highlight */
 const els = {
   csvFile: document.getElementById('csvFile'),
   loadSample: document.getElementById('loadSample'),
@@ -268,23 +268,17 @@ function csvToRows(csv){
       else if (ch === delimiter){ row.push(cell); cell=''; }
       else if (ch === '\n'){
         row.push(cell); cell='';
-        // push non-empty row
         if (row.some(v => (v ?? '').toString().trim() !== '')) rows.push(row.map(v => (v ?? '').toString()));
         row=[];
       } else if (ch === '\r'){ /* ignore */ }
       else { cell += ch; }
     }
   }
-  // last cell/row
   if (cell.length || row.length){
     row.push(cell);
     if (row.some(v => (v ?? '').toString().trim() !== '')) rows.push(row.map(v => (v ?? '').toString()));
   }
-
-  // Trim cells
-  for (let r=0; r<rows.length; r++){
-    rows[r] = rows[r].map(c => c.trim());
-  }
+  for (let r=0; r<rows.length; r++){ rows[r] = rows[r].map(c => c.trim()); }
   return rows;
 }
 function toCsv(rows){
@@ -294,23 +288,33 @@ function toCsv(rows){
   }).join(',')).join('\n');
 }
 
+/* v8.4: breder header-support */
 function parseSongs(csv){
   const rows = csvToRows(csv);
   if (!rows.length) return [];
-  const header = rows[0].map(h=>h.toLowerCase());
-  const idxTitle = Math.max(header.indexOf('title'), 0);
-  const idxArtist = header.indexOf('artist') >= 0 ? header.indexOf('artist') : 1;
-  const idxPrev = header.indexOf('preview_url');
+  const header = rows[0].map(h=>h.toLowerCase().trim());
+
+  const findIdx = (names, fallback=null) => {
+    for (const name of names){
+      const i = header.indexOf(name);
+      if (i >= 0) return i;
+    }
+    return fallback;
+  };
+
+  const idxTitle  = findIdx(['title','song','track'], 0);
+  const idxArtist = findIdx(['artist','artiest','singer','band'], 1);
+  const idxPrev   = findIdx(['preview_url','preview','url','link','youtube','yt','video'], -1);
 
   const out = [];
   for (let i=1;i<rows.length;i++){
     const r = rows[i];
-    const title = (r[idxTitle] || '').trim();
-    const artist = (r[idxArtist] || '').trim();
-    let preview_url = (idxPrev>=0 ? r[idxPrev] : '') || '';
+    const title = ((r[idxTitle] ?? '').trim());
+    const artist = ((r[idxArtist] ?? '').trim());
+    let preview_url = idxPrev >= 0 ? ((r[idxPrev] ?? '').trim()) : '';
     if (!title) continue;
     if (preview_url) preview_url = sanitizeUrl(preview_url);
-    out.push({title, artist, preview_url, key: `${title} — ${artist}`.trim()});
+    out.push({ title, artist, preview_url, key: `${title} — ${artist}`.trim() });
   }
   return out;
 }
@@ -353,19 +357,18 @@ Bohemian Rhapsody,Queen,https://www.youtube.com/watch?v=fJ9rUzIMcZQ`;
   els.csvText.value = sample;
 });
 
+/* v8.4: bestand eerst, daarna pas tekstvak */
 els.parseCsv.addEventListener('click', async ()=>{
   let txt = '';
-  // 1) Bestand heeft voorrang
   if (els.csvFile.files && els.csvFile.files[0]) {
     txt = await readFileAsText(els.csvFile.files[0]);
   } else {
-    // 2) Anders textarea
     txt = (els.csvText.value || '').trim();
   }
   if (!txt) { alert('Geef een CSV (upload of plak tekst).'); return; }
 
   SONGS = parseSongs(txt);
-  if (!SONGS.length) { alert('Geen songs gevonden. Zorg zeker voor header: title,artist,preview_url'); return; }
+  if (!SONGS.length) { alert('Geen songs gevonden. Gebruik header: title, artist, (preview_url/url/link/...)'); return; }
 
   updateSongCount();
   localStorage.setItem('MB_SONGS', JSON.stringify(SONGS));
@@ -502,14 +505,43 @@ function renderHost(nowKey){
   remaining.forEach(key=>{ const li=document.createElement('li'); const s=SONGS.find(x=>x.key===key); li.textContent=s?`${s.title}${s.artist?' — '+s.artist:''}`:key; els.remainingList.appendChild(li); });
   rerenderNowPlaying(nowKey);
 }
+
+/* v8.4: fallback naar YouTube-zoeklink als CSV geen preview heeft */
+function makeSearchUrl(artist, title){
+  const q = encodeURIComponent(`${artist} ${title}`.trim());
+  return `https://www.yout-ube.com/results?search_query=${q}`;
+}
 function rerenderNowPlaying(latestKey=null){
-  let key = latestKey; if (!key && DRAWN_KEYS.size) key = Array.from(DRAWN_KEYS).slice(-1)[0];
-  if (!key){ els.nowTitle.innerHTML='<em>Ready. Klik “Trek volgend liedje”.</em>'; els.previewLink.style.display='none'; els.noPreviewBadge.style.display='none'; return; }
-  const s = SONGS.find(x=>x.key===key); const title = s ? `${s.title}${s.artist?' — '+s.artist:''}` : key;
+  let key = latestKey;
+  if (!key && DRAWN_KEYS.size) key = Array.from(DRAWN_KEYS).slice(-1)[0];
+
+  if (!key){
+    els.nowTitle.innerHTML = '<em>Ready. Klik “Trek volgend liedje”.</em>';
+    els.previewLink.style.display = 'none';
+    els.noPreviewBadge.style.display = 'none';
+    return;
+  }
+
+  const s = SONGS.find(x => x.key === key);
+  const title = s ? `${s.title}${s.artist ? ' — ' + s.artist : ''}` : key;
   els.nowTitle.textContent = title;
-  const href = s && s.preview_url ? playbackUrl(s.preview_url) : '';
-  if (href){ els.previewLink.href = href; els.previewLink.style.display='inline-block'; els.noPreviewBadge.style.display='none'; }
-  else { els.previewLink.style.display='none'; els.noPreviewBadge.style.display='inline-block'; }
+
+  // 1) CSV-preview als die er is
+  let href = (s && s.preview_url) ? playbackUrl(s.preview_url) : '';
+
+  // 2) Geen URL? Bouw automatisch een YouTube-zoeklink
+  if (!href && s){
+    href = playbackUrl(makeSearchUrl(s.artist, s.title));
+  }
+
+  if (href && els.clickablePreview && els.clickablePreview.checked){
+    els.previewLink.href = href;
+    els.previewLink.style.display = 'inline-block';
+    els.noPreviewBadge.style.display = 'none';
+  } else {
+    els.previewLink.style.display = 'none';
+    els.noPreviewBadge.style.display = 'inline-block';
+  }
 }
 
 function evaluateCard(card, drawnKeysSet){
